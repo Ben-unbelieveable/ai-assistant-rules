@@ -2,42 +2,31 @@
 
 跨平台 AI 助手规则库，管理 Claude Code / Cursor / OpenClaw 等通用规则，实现多平台同步更新迭代。
 
-## 平台兼容
+## 🎯 项目目标
 
-| 平台 | 状态 |
-|------|------|
-| Claude Code | ✅ |
-| Cursor | ✅ |
-| OpenClaw | ✅ |
-| 其他 | 待扩展 |
+- 整理和汇总热门开源 Rule 配置
+- 提取可复用的规则规范
+- 实现跨平台（Claude Code / Cursor / OpenClaw）规则同步
 
-## 目录结构
+## 🗂️ 目录结构
 
 ```
 ai-assistant-rules/
-├── README.md
-├── LICENSE
-├── rules/
-│   ├── shared/          # 通用规则（所有平台适用）
-│   ├── claude-code/     # Claude Code 专属
-│   ├── cursor/          # Cursor 专属
-│   └── openclaw/       # OpenClaw 专属
-└── docs/
-    └── PLATFORMS.md     # 平台差异说明
+├── research/
+│   └── RULES-INDEX.md     # 开源 Rule 资源索引
+├── references/
+│   └── platform-native/   # 各平台原生规则参考
+└── plan/
+    └── TODO.md            # 项目计划
 ```
 
-## 规则同步机制
+## 📌 当前状态
 
-通用规则放在 `rules/shared/`，各平台通过引用或软链方式接入。
-平台专属规则放在对应目录，独立维护。
+- [x] 完成开源资源调研（RULES-INDEX.md）
+- [ ] 提取各规则库的通用规范
+- [ ] 整理跨平台兼容规则
+- [ ] 同步到 GitHub
 
-## 贡献指南
+## 🔗 GitHub
 
-1. 通用规则优先写入 `rules/shared/`
-2. 平台专属规则写入对应目录
-3. 新增规则需标注适用平台
-4. 更新时保持跨平台兼容性
-
-## License
-
-MIT
+https://github.com/Ben-unbelieveable/ai-assistant-rules
