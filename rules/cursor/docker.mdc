@@ -1,0 +1,189 @@
+---
+description: Dockerfile 撰写的约定、标准结构与最佳实践。
+globs: **/Dockerfile,**/Dockerfile.*,**/*.dockerfile
+alwaysApply: false
+---
+
+# Dockerfile 创作标准规划
+
+撰写 Dockerfile 前，按以下顺序规划；生成文件时必须遵循后续各节 [MUST]/[SHOULD] 规则。
+
+## 0. 创作前规划清单
+
+1. **明确镜像职责**：区分 builder（编译/安装依赖）与 runtime（仅运行），禁止单阶段混装构建工具与运行时。
+2. **选定基础镜像**：按语言与部署环境选择 minimal 镜像（distroless / alpine / slim），并锁定具体 Tag 或 digest。
+3. **梳理构建上下文**：同步创建 `.dockerignore`，排除 `.git`、`node_modules`、`__pycache__`、测试产物、本地密钥等。
+4. **定义运行身份**：确定非 root UID/GID、WORKDIR、需持久写入的目录（`/tmp`、日志、缓存）。
+5. **确定启动方式**：区分 `ENTRYPOINT`（固定入口）与 `CMD`（默认参数）；生产服务优先 exec 形式 JSON 数组。
+6. **对齐编排约束**：若镜像用于 Kubernetes / Argo，需与 `runAsNonRoot`、`readOnlyRootFilesystem`、资源 limits 兼容。
+7. **确认构建网络环境**：国内构建默认启用国内镜像源（基础镜像代理、包管理器 mirror）；海外/CI 可通过 `ARG` 覆盖，禁止在 Dockerfile 中写死单一区域源。
+
+## 1. 标准文件结构（推荐模板）
+
+多阶段构建的标准骨架如下；单阶段仅用于极简工具镜像或一次性 Job。
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+# ── Stage 1: builder ──
+FROM <lang>:<version>-<variant> AS builder
+WORKDIR /build
+COPY <lock-files> ./
+RUN <install-deps-with-cache-mount>
+COPY . .
+RUN <compile-or-build>
+
+# ── Stage 2: runtime ──
+FROM <minimal-base>:<version> AS runtime
+WORKDIR /app
+
+RUN addgroup -g 10001 -S appgroup && \
+    adduser -u 10001 -S appuser -G appgroup
+
+COPY --from=builder --chown=appuser:appgroup /build/<artifact> ./
+
+USER appuser:appgroup
+
+EXPOSE <port>
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD [<health-check-cmd>]
+
+ENTRYPOINT ["<binary>"]
+CMD ["<default-args>"]
+```
+
+阶段命名约定：`builder` / `runtime`；可选 `test` 阶段用于 CI 内联测试，不得进入最终镜像。
+
+---
+
+# 基础语法与元数据 (Syntax & Metadata)
+
+1. [MUST] 使用 Dockerfile 语法声明：文件首行写 `# syntax=docker/dockerfile:1`，以启用 BuildKit 特性（cache mount、secret mount）。
+2. [MUST] 基础镜像锁定：`FROM` 必须指定明确 Tag 或 digest（如 `python:3.13.2-slim-bookworm` 或 `@sha256:...`），禁止使用 `:latest`。
+3. [MUST] 每个阶段必须显式声明 `AS <stage-name>`；多阶段构建时最终 `FROM` 指向 runtime 阶段。
+4. [SHOULD] 在文件顶部用注释说明：镜像用途、构建命令、预期暴露端口、运行时所需环境变量（不含密钥值）。
+
+# 构建上下文与层缓存 (Build Context & Layer Caching)
+
+1. [MUST] 必须提供 `.dockerignore`，至少排除：`.git`、IDE 配置、测试/覆盖率产物、文档、本地 `.env` 与密钥文件。
+2. [MUST] 依赖安装先于源码复制：先 `COPY` lock 文件（`package-lock.json` / `poetry.lock` / `requirements.txt` / `go.mod`），再 `RUN` 安装，最后 `COPY` 业务源码，最大化层缓存命中。
+3. [MUST] 合并同类 RUN 指令并清理缓存：同一阶段内连续的 apt/apk/pip 操作合并为一条 `RUN`，末尾删除包管理器缓存（如 `rm -rf /var/lib/apt/lists/*`、`pip install --no-cache-dir`）。
+4. [SHOULD] 使用 BuildKit cache mount 加速重复构建：
+   ```dockerfile
+   RUN --mount=type=cache,target=/root/.cache/pip \
+       pip install -r requirements.txt
+   ```
+5. [SHOULD] 优先 `COPY` 而非 `ADD`；仅在需要自动解压 tar 或远程 URL 时使用 `ADD`。
+
+# 国内镜像源 (China Mirror Sources)
+
+国内环境构建时，优先使用国内镜像源以提升拉取与安装速度；通过 `ARG` 参数化，便于不同环境切换。
+
+1. [SHOULD] 基础镜像：国内构建优先使用镜像代理前缀，通过 build-arg 注入，避免硬编码：
+   ```dockerfile
+   ARG BASE_REGISTRY=docker.m.daocloud.io/library
+   FROM ${BASE_REGISTRY}/python:3.13.2-slim-bookworm AS builder
+   ```
+   常用代理：`docker.m.daocloud.io/library`（DaoCloud）、`registry.cn-hangzhou.aliyuncs.com`（阿里云公共镜像，需确认命名空间路径）。
+
+2. [SHOULD] Debian/Ubuntu（apt）：在首次 `apt-get` 前替换为国内源：
+   ```dockerfile
+   RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+       apt-get update && apt-get install -y --no-install-recommends <packages> && \
+       rm -rf /var/lib/apt/lists/*
+   ```
+   备选：清华 `mirrors.tuna.tsinghua.edu.cn`、中科大 `mirrors.ustc.edu.cn`。
+
+3. [SHOULD] Alpine（apk）：替换默认 CDN：
+   ```dockerfile
+   RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+       apk add --no-cache <packages>
+   ```
+
+4. [SHOULD] Python（pip）：国内构建使用 PyPI 镜像，推荐清华或阿里云：
+   ```dockerfile
+   ARG PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+   ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+   RUN pip install --no-cache-dir -i ${PIP_INDEX} --trusted-host ${PIP_TRUSTED_HOST} -r requirements.txt
+   ```
+   使用 `uv` 时：`ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。
+
+5. [SHOULD] Node.js（npm/pnpm）：设置国内 registry：
+   ```dockerfile
+   ARG NPM_REGISTRY=https://registry.npmmirror.com
+   RUN npm config set registry ${NPM_REGISTRY} && npm ci --omit=dev
+   ```
+   pnpm：`pnpm config set registry https://registry.npmmirror.com`。
+
+6. [SHOULD] Go：设置模块代理：
+   ```dockerfile
+   ENV GOPROXY=https://goproxy.cn,direct
+   ```
+
+7. [SHOULD] Java（Maven/Gradle）：builder 阶段挂载或生成国内 settings，优先阿里云 Maven 镜像：
+   ```xml
+   <!-- settings.xml mirror -->
+   <mirror>
+     <id>aliyunmaven</id>
+     <mirrorOf>*</mirrorOf>
+     <url>https://maven.aliyun.com/repository/public</url>
+   </mirror>
+   ```
+   Gradle：`ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"` 并在 `init.gradle` 或 `gradle.properties` 中配置 `maven { url 'https://maven.aliyun.com/repository/public' }`。
+
+8. [MUST] 镜像源切换不得破坏版本锁定：换源后仍须使用 lock 文件（`requirements.txt` / `package-lock.json` / `go.sum` 等），禁止因换源改为浮动版本安装。
+
+9. [SHOULD] 海外部署或跨国 CI 构建时，通过 `--build-arg BASE_REGISTRY=` 恢复官方源，无需修改 Dockerfile 主体。
+
+# 多阶段与镜像精简 (Multi-Stage & Image Size)
+
+1. [MUST] 生产应用默认采用多阶段构建：builder 负责编译与依赖安装，runtime 仅包含运行产物与最小运行时。
+2. [MUST] runtime 阶段禁止保留：编译器、包管理器、shell 调试工具（除非运维明确要求且已文档化）。
+3. [SHOULD] 编译型语言优先 distroless 或 scratch 作为 runtime 基础镜像；解释型语言优先 `-alpine` / `-slim` 变体。
+4. [SHOULD] 使用 `COPY --from=builder --chown=<user>:<group>` 仅复制必要产物，避免 `COPY --from=builder / /` 整目录拷贝。
+
+# 安全与凭据 (Security & Secrets)
+
+1. [MUST] 禁止在镜像中硬编码任何 Token、密码、私钥；禁止 `COPY .env`、`credentials.json` 等敏感文件进镜像。
+2. [MUST] 禁止通过 `ARG` 传入密钥并在镜像层中持久化；密钥仅允许运行时通过环境变量、Secret 挂载或 BuildKit `secret` mount 注入。
+3. [MUST] runtime 阶段必须以非 root 用户运行：创建专用用户/组，在 `COPY` 后执行 `USER <uid>:<gid>`。
+4. [SHOULD] 为可写目录提前创建并 `chown`（如 `/tmp`、`/app/logs`），以兼容 `readOnlyRootFilesystem: true`。
+5. [SHOULD] 不在镜像内安装 SSH 服务端、setuid 二进制或不必要的网络调试工具。
+
+# 运行时与启动契约 (Runtime & Entrypoint)
+
+1. [MUST] 显式声明 `WORKDIR`；应用代码与运行时产物置于单一工作目录下。
+2. [MUST] `ENTRYPOINT` 与 `CMD` 使用 exec 形式（JSON 数组），避免 shell 形式导致信号无法正确传递（PID 1 僵尸进程问题）。
+3. [MUST] 仅一个主进程职责：不要在 `CMD` 中用 `&&` 串联多个长期运行服务；辅助进程交给编排层 Sidecar 或 init 机制。
+4. [SHOULD] 对外服务声明 `EXPOSE` 端口；长期运行服务配置 `HEALTHCHECK`。
+5. [SHOULD] 通过 `ENV` 声明非敏感配置项的默认值；敏感配置仅声明变量名，值由运行时注入。
+6. [SHOULD] 添加 `LABEL org.opencontainers.image.source`、`org.opencontainers.image.version` 便于镜像溯源。
+
+# 语言专项约定 (Language-Specific)
+
+## Python
+- [MUST] 使用 `pip install --no-cache-dir` 或 `uv pip install`；生产镜像用 `requirements.txt` / lock 文件锁定版本。
+- [SHOULD] 国内构建遵循「国内镜像源」章节配置 pip/uv 镜像；优先 `python:3.x-slim` 或 distroless python。
+- [SHOULD] 虚拟环境在 builder 阶段创建，runtime 仅复制 site-packages 与入口脚本。
+
+## Node.js
+- [MUST] 生产镜像使用 `npm ci`（有 lock 文件时），禁止 `npm install` 引入浮动版本。
+- [SHOULD] 国内构建使用 `registry.npmmirror.com`；仅复制生产依赖或通过 `npm ci --omit=dev` 安装后复制。
+
+## Go
+- [SHOULD] builder 阶段设置 `GOPROXY=https://goproxy.cn,direct`，`CGO_ENABLED=0 go build -ldflags="-s -w"`。
+- [MUST] runtime 使用 `scratch` 或 distroless static；最终镜像仅含静态编译二进制与必要 CA 证书。
+
+## Java
+- [SHOULD] builder 使用阿里云 Maven 镜像；runtime 采用 distroless java 或 eclipse-temurin jre。
+- [MUST] 使用 jlink 或 slim JRE 镜像，禁止 runtime 携带完整 JDK。
+
+# 质量验证 (Verification)
+
+Dockerfile 完成后，至少执行：
+
+1. `docker build -t <name>:<tag> .` — 构建成功且无警告性坏味道（如 secrets in layers）。
+2. `docker history <name>:<tag>` — 确认无密钥层、无多余中间层泄露。
+3. `trivy image --severity CRITICAL,HIGH <name>:<tag>` — 镜像漏洞扫描。
+4. `trivy config --severity CRITICAL,HIGH Dockerfile` — Dockerfile 配置审计。
+5. `docker run --rm --read-only --user <uid>:<gid> <name>:<tag>` — 验证非 root、只读根文件系统下可正常启动。

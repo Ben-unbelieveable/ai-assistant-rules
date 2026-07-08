@@ -1,0 +1,29 @@
+---
+description: Argo yaml文件撰写的约定和最佳实践。
+alwaysApply: false
+---
+
+# 基础语法与元数据 (Metadata & Syntax)
+1. [MUST] API 锁定：apiVersion 必须严格声明为 argoproj.io/v1alpha1。
+2. [MUST] 资源类型限制：kind 必须是 Workflow、WorkflowTemplate、ClusterWorkflowTemplate 或 CronWorkflow 中的一种。
+3. [SHOULD] 命名规范：metadata.generateName 优先于 metadata.name 使用，以避免同名冲突（除非是单次执行的固定任务）。命名必须符合 DNS-1123 规范（小写字母、数字、连字符）。
+
+# 编排与控制流设计 (Orchestration & Control Flow)
+1. [MUST] 模板解耦：禁止在 entrypoint 模板中直接编写复杂的业务逻辑。entrypoint 必须仅作为一个调度器（使用 dag 或 steps）去调用下游的独立 templates。
+2. [MUST] 复杂编排 DAG 优先：如果任务数量 ≥ 3 且存在非线性依赖关系，强制使用 dag（有向无环图）代替 steps。必须通过 dependencies 明确声明节点执行顺序。
+3. [MUST] 变量语法隔离：必须使用 Argo 的特定模板语法 {{}} 来引用参数（如 {{inputs.parameters.name}}）。当在 script 或 command 中需要使用原生 Shell 变量时，必须转义或明确区分，防止 Argo 解析器报错。
+
+# 健壮性与生命周期管理 (Robustness & Lifecycle)
+1. [MUST] 全局/局部超时：必须在 Workflow 顶层或高耗时 Template 层级声明 activeDeadlineSeconds，绝对禁止无超时限制的任务挂起。
+2. [MUST] 资源清理策略：Workflow 顶层必须配置 ttlStrategy（例如 ttlSecondsAfterFinished），确保执行完毕（无论成功或失败）的 Pod 和 Workflow 资源能按策略被 Kubernetes 自动回收，防止 etcd 溢出。
+3. [SHOULD] 容错与重试：对于涉及外部网络请求、依赖三方接口的 template，必须配置 retryStrategy。要求设置最大重试次数（limit）并采用指数退避策略（backoff）。
+
+# 安全与容器规范 (Security & Container Standards)
+1. [MUST] 镜像标签锁定：image 字段必须指定明确的 Tag 或 SHA256 摘要（例如 nginx:1.25.3）。绝对禁止使用 :latest 标签。
+2. [MUST] 强制资源配额：每一个 container 或 script 模板都必须显式声明资源限制，包含 resources.requests 和 resources.limits（CPU 与 Memory）。
+3. [MUST] 凭据安全隔离：绝对禁止在 YAML 中明文硬编码任何 Token、密码或密钥。所有敏感信息必须通过 envFrom、valueFrom.secretKeyRef 从 Kubernetes Secrets 中动态挂载。
+4. [SHOULD] 最小权限运行：对于非特权任务，必须在 securityContext 中配置 runAsNonRoot: true，禁止以 Root 权限运行业务容器。
+
+# 数据与状态传递 (Data & State Passing)
+1. [MUST] 严格的输入输出契约：任何需要传递数据的 Template，必须在顶级显式声明 inputs 和 outputs（包括 parameters 和 artifacts），禁止依赖隐式上下文。
+2. [MUST] Artifact 存储解耦：如果使用 artifacts 进行大文件/数据流转，必须在 Workflow 级别定义统一的 artifactRepositoryRef 或挂载 PVC，禁止依赖本地临时存储。

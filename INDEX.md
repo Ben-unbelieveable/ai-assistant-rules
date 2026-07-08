@@ -7,9 +7,13 @@ ai-assistant-rules/
 ├── INDEX.md              # 本文件 — 项目入口
 ├── README.md             # 项目背景和概述
 ├── research/
-│   └── RULES-INDEX.md    # 🔥 开源 Rule 资源索引（本目录核心）
-├── references/
-│   └── *.md              # 各平台规则参考文件
+│   └── RULES-INDEX.md    # 🔥 开源 Rule 资源索引（调研阶段产出）
+├── rules/                # 📦 提取的规则文件
+│   ├── MANIFEST.md       # 规则文件清单（含来源索引）
+│   ├── shared/           # 跨平台通用规则
+│   ├── cursor/           # Cursor 专属规则
+│   ├── claude-code/      # Claude Code 安全规则
+│   └── devin/            # Devin 增强规则
 └── plan/
     └── *.md              # 项目计划
 ```
