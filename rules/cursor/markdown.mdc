@@ -1,0 +1,8 @@
+---
+description: *md
+alwaysApply: false
+---
+
+# 撰写规范
+[SHOULD] 数学公式使用 LaTeX 语法。 
+[SHOULD] 文档内容自闭和，减少不必要的markdown文件之间的外链
