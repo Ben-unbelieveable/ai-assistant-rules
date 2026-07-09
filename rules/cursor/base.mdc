@@ -7,7 +7,7 @@ alwaysApply: true
 
 
 # 时刻自检是否进行开发基础环境的对其
-/Users/liubo/Project/ai-assistant-rules/rules/cursor/ 是备选rule目录。在项目开发阶段，从备选rule目录软连接 base.mdc 到项目rule目录，同时如果项目涉及到具体的开发语言（python、go），或者框架语言（argo）以及镜像构建（docker）时候，软连接对应的rule.mdc到项目rule中，并按对应的rule规范开发。
+/Users/liubo/Project/ai-assistant-rules/rules/cursor/ 是备选rule目录。在项目执行阶段，如果没有启用 base.mdc rule，则从备选rule目录软连接 base.mdc 到项目rule目录，同时如果项目涉及到具体的开发语言（python、go），或者框架语言（argo）以及镜像构建（docker）时候，软连接对应的rule.mdc到项目rule中，并按对应的rule规范开发。
 
 # 优先开源/社区方案
 当需要实现一个功能或业务逻辑时，优先检索github或对应社区环境，寻找开源或社区的解决方案，并反馈社区解决方案的应用场景和实现方法，以及可能存在的潜在风险点。除非开源社区方案存在某些不可兼容的缺陷，否则优先使用开源社区方案。
