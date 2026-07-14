@@ -1,0 +1,244 @@
+---
+description: Shell 脚本撰写的约定、标准结构与最佳实践（兼容 Linux / macOS）。
+globs: **/*.sh,**/*.bash
+alwaysApply: false
+---
+
+# Shell 脚本创作标准
+
+撰写 Shell 脚本前，按以下顺序规划；生成文件时必须遵循后续各节 [MUST]/[SHOULD] 规则。
+
+运行环境涉及 Linux、macOS 等不同平台，脚本必须在目标平台上可运行、可调试、可审计。
+
+## 0. 创作前规划清单
+
+1. **明确脚本职责**：区分一次性工具脚本、CI 脚本、部署脚本、长期维护的运维脚本；避免在一个脚本中混合多种职责。
+2. **选定 Shell 方言**：默认 Bash（`#!/usr/bin/env bash`）；仅依赖 POSIX 特性时使用 `#!/bin/sh` 并避免 Bash 扩展语法。
+3. **梳理输入输出**：参数、环境变量、stdin/stdout/stderr、退出码契约；对外部调用方文档化。
+4. **确认目标平台**：至少覆盖 Linux 与 macOS；GNU 与 BSD 工具尽可能避免，如果必须使用，差异须在注释或 README 中说明。
+5. **对齐安全约束**：禁止硬编码密钥；外部输入（参数、环境变量、文件内容）一律视为不可信。
+6. **确定验证方式**：本地 `shellcheck`、目标平台手动执行、CI 中的 dry-run 或集成测试。
+
+---
+
+## 1. 标准文件结构（推荐模板）
+
+```bash
+#!/usr/bin/env bash
+#
+# 用途：<脚本功能一句话说明>
+# 用法：<script.sh> [options] [args...]
+# 退出码：0 成功；非 0 见下方 ERROR_* 常量
+#
+set -euo pipefail
+
+readonly SCRIPT_NAME="${0##*/}"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── 常量与配置 ──
+readonly ERROR_USAGE=1
+readonly ERROR_RUNTIME=2
+
+# ── 函数 ──
+
+# usage 输出帮助信息到 stderr 并返回。
+# 输入：无
+# 输出：帮助文本（stderr）
+usage() {
+  cat <<EOF
+Usage: ${SCRIPT_NAME} [options] [args...]
+
+Options:
+  -h, --help     显示帮助
+  -v, --verbose  输出调试信息
+  -n, --dry-run  仅打印将执行的命令，不实际运行
+EOF
+}
+
+# log_info 向 stderr 输出普通日志。
+# 输入：$* 日志内容
+# 输出：格式化日志行（stderr）
+log_info() {
+  echo "[INFO] $*" >&2
+}
+
+# log_error 向 stderr 输出错误日志。
+# 输入：$* 错误内容
+# 输出：格式化错误行（stderr）
+log_error() {
+  echo "[ERROR] $*" >&2
+}
+
+# require_cmd 检查命令是否存在，不存在则退出。
+# 输入：$1 命令名
+# 输出：无；缺失时以 ERROR_RUNTIME 退出
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    log_error "required command not found: $1"
+    exit "${ERROR_RUNTIME}"
+  }
+}
+
+# parse_args 解析命令行参数。
+# 输入："$@" 原始参数
+# 输出：设置全局选项变量（如 VERBOSE、DRY_RUN）
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -v|--verbose)
+        VERBOSE=1
+        shift
+        ;;
+      -n|--dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        log_error "unknown option: $1"
+        usage
+        exit "${ERROR_USAGE}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+  ARGS=("$@")
+}
+
+# main 脚本主入口。
+# 输入："$@" 命令行参数
+# 输出：无；成功 exit 0，失败 exit 非 0
+main() {
+  local VERBOSE=0
+  local DRY_RUN=0
+  local -a ARGS=()
+
+  parse_args "$@"
+  require_cmd curl
+
+  # 业务逻辑
+  log_info "done"
+}
+
+main "$@"
+```
+
+---
+
+# 基础语法与元数据 (Syntax & Metadata)
+
+1. [MUST] Shebang 使用 `#!/usr/bin/env bash`（或 POSIX 场景下 `#!/bin/sh`），禁止硬编码 `/bin/bash` 等可能不存在的绝对路径。
+2. [MUST] 文件顶部注释说明：用途、用法、主要退出码含义；复杂脚本补充依赖命令与示例。。
+1. [MUST] 只读常量使用 `readonly`；脚本目录用 `SCRIPT_DIR` 定位，禁止依赖调用时的当前工作目录隐式假设。
+2. [SHOULD] 入口统一为 `main "$@"`，避免顶层散落可执行语句。
+3. [SHOULD] 缩进使用 2 或 4 空格，禁止 Tab；函数名 `snake_case`，环境变量与常量 `UPPER_SNAKE_CASE`。
+
+# 跨平台兼容 (Linux / macOS)
+
+1. [MUST] 禁止无兼容说明地使用 GNU 专属语法或命令（如 `readlink -f`、`sed -i` 无备份后缀、`date -d`）。
+2. [MUST] 路径与临时文件：使用 `mktemp` 创建临时文件/目录；禁止固定 `/tmp/myscript.$$` 等可预测路径。
+3. [SHOULD] 优先 POSIX 可移植写法；必须用 Bash 特性时在注释中标注「Bash only」。
+4. [SHOULD] 对平台差异封装为函数，例如：
+
+   ```bash
+   # sed_inplace 原地编辑文件（兼容 GNU sed 与 BSD sed）。
+   # 输入：$1 文件路径；其余参数为 sed 表达式
+   sed_inplace() {
+     local file=$1
+     shift
+     if sed --version >/dev/null 2>&1; then
+       sed -i "$@" "${file}"
+     else
+       sed -i '' "$@" "${file}"
+     fi
+   }
+   ```
+
+5. [SHOULD] 在 Linux 与 macOS 各至少执行一次验证，或在 CI 矩阵中覆盖双平台。
+
+# 变量、引用与词拆分 (Variables & Quoting)
+
+1. [MUST] 所有变量展开加双引号：`"$var"`、`"${array[@]}"`；命令替换 `"$(cmd)"`。
+2. [MUST] 数组传递参数时使用 `"${array[@]}"`，禁止 `"${array[*]}"` 用于多参数场景。
+3. [MUST NOT] 在未校验的情况下使用 `eval`、`exec` 拼接用户输入。
+4. [SHOULD] 只读路径常量：`readonly SCRIPT_DIR=...`；可选 `IFS=$'\n\t'` 降低 word splitting 风险。
+5. [SHOULD] 复杂默认值：`${VAR:-default}`、`${VAR:?error message}`。
+
+# 参数与用法 (Arguments & Usage)
+
+1. [MUST] 提供 `-h` / `--help`；未知选项报错并以非 0 退出。
+2. [MUST] 必选参数缺失时打印 usage 并退出，退出码固定且文档化。
+3. [SHOULD] 使用 `getopts` 或 `case` 解析；选项与 positional 参数用 `--` 分隔。
+4. [SHOULD] 支持 `--dry-run` 或 `VERBOSE=1` 便于 CI 与排障（适用时）。
+
+# 错误处理与清理 (Errors & Cleanup)
+
+1. [MUST] 关键命令失败不得静默忽略；若使用 `cmd || true`，必须在同行或上一行注释说明原因。
+2. [SHOULD] 使用 `trap 'log_error "failed at line ${LINENO}"; exit 1' ERR` 辅助定位（Bash）。
+3. [SHOULD] 函数用 `return` 表示可恢复错误；不可恢复错误 `exit` 并带上语义化退出码。
+4. [SHOULD] 日志与普通输出分离：业务结果 → stdout，日志与错误 → stderr。
+
+# 安全 (Security)
+
+1. [MUST NOT] 在脚本中硬编码密码、Token、私钥；敏感值仅通过环境变量或 Secret 注入，且不得 `echo` 到日志。
+2. [MUST NOT] 使用 `curl ... | bash`、`wget ... | sh` 等远程管道执行模式。
+3. [MUST NOT] 将 CI/CD 外部输入（PR 标题、分支名、commit message、Issue 字段）直接拼接到 shell 命令中。
+4. [MUST] 外部输入用于命令参数时，优先固定命令 + 参数数组；必须拼接时用 `printf %q` 或严格白名单校验。
+5. [SHOULD] 调用其他程序时使用数组形式，避免字符串拼接：
+
+   ```bash
+   # 正确
+   git clone --depth 1 "${url}" "${dest_dir}"
+
+   # 错误
+   git clone --depth 1 ${url} ${dest_dir}
+   ```
+
+6. [SHOULD] 最小权限：不要求 root 的脚本禁止 `sudo`；写系统目录前检查权限。
+
+# 函数与注释 (Functions & Documentation)
+
+1. [MUST] 非平凡函数在定义前用注释说明：输入、输出、处理逻辑概述。
+2. [MUST] 函数通过参数或返回值传递数据，避免滥用全局变量；全局变量名加前缀（如 `CFG_`、`OPT_`）。
+3. [SHOULD] 单个函数职责单一；超过 40 行考虑拆分。
+4. [SHOULD] 公共函数库置于 `scripts/lib/` 或 `scripts/common.sh`，由 `source "${SCRIPT_DIR}/common.sh"` 引入。
+
+# 外部命令与依赖 (External Commands)
+
+1. [MUST] 脚本开头或 `main` 入口用 `require_cmd` / `command -v` 检查必要依赖。
+2. [SHOULD] 可选依赖缺失时降级或明确报错，禁止运行时才发现。
+3. [SHOULD] 优先使用标准 Unix 工具；复杂逻辑用 Python/Go 等语言实现，Shell 仅作胶水层。
+4. [MUST NOT] 依赖未文档化的交互式命令默认行为（如 `rm -i`、`git` 无 `GIT_TERMINAL_PROMPT=0` 时的提示）。
+
+# CI / 部署脚本专项 (CI & Deployment)
+
+1. [MUST] CI 脚本 idempotent（可重复执行不产生副作用累积）。
+2. [MUST] 失败时立即非 0 退出，便于流水线中断；禁止「失败后继续但最后一律 exit 0」。
+3. [SHOULD] 与 Argo / K8s 配合时，创建与运行拆分为独立脚本（参见 `argo.mdc`）。
+4. [SHOULD] 容器内调用时使用 exec 形式入口，确保信号正确传递（参见 `docker.mdc`）。
+
+# 风格与静态检查 (Style & Lint)
+
+1. [SHOULD] 提交前对脚本运行 `shellcheck`；CI 中对 `**/*.sh` 集成 ShellCheck。
+2. [SHOULD] 复杂条件使用 `[[ ]]`（Bash）；字符串比较显式引用双方。
+3. [SHOULD] 使用 `$(cmd)` 替代反引号 `` `cmd` ``。
+4. [SHOULD] 魔法数字提取为命名常量并 `readonly`。
+
+# 质量验证 (Verification)
+
+脚本完成后，至少执行：
+
+1. `shellcheck -x script.sh` — 静态检查无 error 级别问题。
+2. `bash -n script.sh` — 语法检查通过。
+3. `./script.sh --help` — 帮助信息正确。
+4. 在目标平台（Linux / macOS）各执行一次主路径与失败路径（缺参、非法选项）。
+5. 含外部输入时，用含空格、引号、元字符的测试用例验证无注入风险。

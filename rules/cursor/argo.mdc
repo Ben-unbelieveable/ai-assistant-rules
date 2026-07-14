@@ -3,6 +3,10 @@ description: Argo yaml文件撰写的约定和最佳实践。
 alwaysApply: false
 ---
 
+# 实践规范
+1. [SHOULD] 默认所有的argo创建都创建成template模板样式，同时同步生成两个shell分别用于创建模板和运行模板。
+
+
 # 基础语法与元数据 (Metadata & Syntax)
 1. [MUST] API 锁定：apiVersion 必须严格声明为 argoproj.io/v1alpha1。
 2. [MUST] 资源类型限制：kind 必须是 Workflow、WorkflowTemplate、ClusterWorkflowTemplate 或 CronWorkflow 中的一种。
@@ -10,7 +14,7 @@ alwaysApply: false
 
 # 编排与控制流设计 (Orchestration & Control Flow)
 1. [MUST] 模板解耦：禁止在 entrypoint 模板中直接编写复杂的业务逻辑。entrypoint 必须仅作为一个调度器（使用 dag 或 steps）去调用下游的独立 templates。
-2. [MUST] 复杂编排 DAG 优先：如果任务数量 ≥ 3 且存在非线性依赖关系，强制使用 dag（有向无环图）代替 steps。必须通过 dependencies 明确声明节点执行顺序。
+2. [MUST] 复杂编排 DAG 优先：如果任务数量 ≥ 3 且存在非线性依赖关系，强制使用 dag（有向无环图）代替 steps。必须通过 depends 明确声明节点执行顺序。
 3. [MUST] 变量语法隔离：必须使用 Argo 的特定模板语法 {{}} 来引用参数（如 {{inputs.parameters.name}}）。当在 script 或 command 中需要使用原生 Shell 变量时，必须转义或明确区分，防止 Argo 解析器报错。
 
 # 健壮性与生命周期管理 (Robustness & Lifecycle)
@@ -27,3 +31,4 @@ alwaysApply: false
 # 数据与状态传递 (Data & State Passing)
 1. [MUST] 严格的输入输出契约：任何需要传递数据的 Template，必须在顶级显式声明 inputs 和 outputs（包括 parameters 和 artifacts），禁止依赖隐式上下文。
 2. [MUST] Artifact 存储解耦：如果使用 artifacts 进行大文件/数据流转，必须在 Workflow 级别定义统一的 artifactRepositoryRef 或挂载 PVC，禁止依赖本地临时存储。
+

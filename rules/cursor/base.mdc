@@ -7,10 +7,18 @@ alwaysApply: true
 
 
 # 时刻自检是否进行开发基础环境的对其
-/Users/liubo/Project/ai-assistant-rules/rules/cursor/ 是备选rule目录。在项目执行阶段，如果没有启用 base.mdc rule，则从备选rule目录软连接 base.mdc 到项目rule目录，同时如果项目涉及到具体的开发语言（python、go），或者框架语言（argo）以及镜像构建（docker）时候，软连接对应的rule.mdc到项目rule中，并按对应的rule规范开发。
+/Users/liubo/Project/ai-assistant-rules/rules/cursor/ 是备选rule目录。在项目执行阶段，如果没有启用 base.mdc rule，则从备选rule目录软连接 base.mdc 到项目rule目录，同时如果项目涉及到具体的开发语言（python、go、shell），或者框架语言（argo）以及镜像构建（docker）时候，软连接对应的rule.mdc到项目rule中，并按对应的rule规范开发。
+## 语言注意事项迭代
+使用特定编程语言过程中犯的一些错误，追加补充记录到对应语言的rule文档的注意事项下，如果对应文档还没有注意事项则自行在文档末尾创建。
 
 # 优先开源/社区方案
 当需要实现一个功能或业务逻辑时，优先检索github或对应社区环境，寻找开源或社区的解决方案，并反馈社区解决方案的应用场景和实现方法，以及可能存在的潜在风险点。除非开源社区方案存在某些不可兼容的缺陷，否则优先使用开源社区方案。
 
 # 项目代码的可读性
 创建项目代码时，一定要生成必要的注释，针对函数注释函数的输入、输出、处理逻辑概述。 针对类说明对象的功能作用
+
+# 默认运行环境
+默认运行环境阿里云中国区，所以在环境安装镜像构建等情况优先使用国内镜像
+默认docker仓库：beijing-acr-cr-registry-vpc.cn-beijing.cr.aliyuncs.com/biocloud/ 
+默认argo挂在存储root目录：/mnt/nas1/liubo/project/
+

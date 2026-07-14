@@ -56,6 +56,7 @@ CMD ["<default-args>"]
 
 ---
 
+
 # 基础语法与元数据 (Syntax & Metadata)
 
 1. [MUST] 使用 Dockerfile 语法声明：文件首行写 `# syntax=docker/dockerfile:1`，以启用 BuildKit 特性（cache mount、secret mount）。
@@ -80,11 +81,14 @@ CMD ["<default-args>"]
 国内环境构建时，优先使用国内镜像源以提升拉取与安装速度；通过 `ARG` 参数化，便于不同环境切换。
 
 1. [SHOULD] 基础镜像：国内构建优先使用镜像代理前缀，通过 build-arg 注入，避免硬编码：
+
    ```dockerfile
-   ARG BASE_REGISTRY=docker.m.daocloud.io/library
-   FROM ${BASE_REGISTRY}/python:3.13.2-slim-bookworm AS builder
+   ARG BASE_REGISTRY=registry.cn-zhangjiakou.aliyuncs.com
+   FROM ${BASE_REGISTRY}/biocloud/miniforge3:24.9.2-0 
    ```
-   常用代理：`docker.m.daocloud.io/library`（DaoCloud）、`registry.cn-hangzhou.aliyuncs.com`（阿里云公共镜像，需确认命名空间路径）。
+   需要GPU资源的镜像： 优先使用 beijing-acr-cr-registry.cn-beijing.cr.aliyuncs.com/biocloud/pytorch:2.3.1-cuda12.1-cudnn8-devel 作为基础镜像
+   不需要GPU资源，优先使用 registry.cn-zhangjiakou.aliyuncs.com/biocloud/miniforge3:24.9.2-0 作为基础镜像
+   常用代理：`registry.cn-zhangjiakou.aliyuncs.com`（阿里云公共镜像，需确认命名空间路径）。
 
 2. [SHOULD] Debian/Ubuntu（apt）：在首次 `apt-get` 前替换为国内源：
    ```dockerfile
@@ -102,11 +106,11 @@ CMD ["<default-args>"]
 
 4. [SHOULD] Python（pip）：国内构建使用 PyPI 镜像，推荐清华或阿里云：
    ```dockerfile
-   ARG PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
-   ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+   ARG PIP_INDEX=https://mirrors.aliyun.com/pypi/simple/
+   ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
    RUN pip install --no-cache-dir -i ${PIP_INDEX} --trusted-host ${PIP_TRUSTED_HOST} -r requirements.txt
    ```
-   使用 `uv` 时：`ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。
+   使用 `uv` 时：`ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple`。
 
 5. [SHOULD] Node.js（npm/pnpm）：设置国内 registry：
    ```dockerfile
@@ -120,20 +124,9 @@ CMD ["<default-args>"]
    ENV GOPROXY=https://goproxy.cn,direct
    ```
 
-7. [SHOULD] Java（Maven/Gradle）：builder 阶段挂载或生成国内 settings，优先阿里云 Maven 镜像：
-   ```xml
-   <!-- settings.xml mirror -->
-   <mirror>
-     <id>aliyunmaven</id>
-     <mirrorOf>*</mirrorOf>
-     <url>https://maven.aliyun.com/repository/public</url>
-   </mirror>
-   ```
-   Gradle：`ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"` 并在 `init.gradle` 或 `gradle.properties` 中配置 `maven { url 'https://maven.aliyun.com/repository/public' }`。
+7. [MUST] 镜像源切换不得破坏版本锁定：换源后仍须使用 lock 文件（`requirements.txt` / `package-lock.json` / `go.sum` 等），禁止因换源改为浮动版本安装。
 
-8. [MUST] 镜像源切换不得破坏版本锁定：换源后仍须使用 lock 文件（`requirements.txt` / `package-lock.json` / `go.sum` 等），禁止因换源改为浮动版本安装。
-
-9. [SHOULD] 海外部署或跨国 CI 构建时，通过 `--build-arg BASE_REGISTRY=` 恢复官方源，无需修改 Dockerfile 主体。
+8. [SHOULD] 海外部署或跨国 CI 构建时，通过 `--build-arg BASE_REGISTRY=` 恢复官方源，无需修改 Dockerfile 主体。
 
 # 多阶段与镜像精简 (Multi-Stage & Image Size)
 
