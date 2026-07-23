@@ -18,4 +18,4 @@ alwaysApply: false
 - 使用文档字符串（docstrings）记录函数、类和模块
 - 遵循面向对象设计原则（SOLID）
 - 使用异常处理保证程序健壮性
-- 使用 `dataclasses` 或 `pydantic` 模型表示数据
+- 使用 `dataclasses` 或 `pydantic` 进行数据的结构初始化。

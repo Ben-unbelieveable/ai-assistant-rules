@@ -3,9 +3,10 @@ description: Argo yaml文件撰写的约定和最佳实践。
 alwaysApply: false
 ---
 
+默认挂载 pvc-nas 存储到 /mnt 并以 /mnt/nas1/liubo/project/作为数据目录。
+
 # 实践规范
 1. [SHOULD] 默认所有的argo创建都创建成template模板样式，同时同步生成两个shell分别用于创建模板和运行模板。
-
 
 # 基础语法与元数据 (Metadata & Syntax)
 1. [MUST] API 锁定：apiVersion 必须严格声明为 argoproj.io/v1alpha1。
